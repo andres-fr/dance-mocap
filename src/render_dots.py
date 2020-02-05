@@ -3,21 +3,8 @@
 
 """
 Scene builder script for Blender. It performs the following tasks:
-xxx
 
-TODO:
-
-* Hide arbitrary dots from render. Way: Give a list of keypoint names
-that should have a dot, and generate only for those.
-
-* dots should be on the root AND tail of every bone, but without
-duplicates.
-Ugly way: set bone lengths to zero, dot.parent=bone, add extra dots
-Nicer way: create dots and grab the sequences from the Mvn object.
-  but this is redundant with many in the armature, so make sure that
-  the timing and positions are correct. A good way would be to actually
-  copy the sequences
-
+TODO
 
 blender --python ~/github-work/dance-mocap/src/render_dots.py -- -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/ILF12_20191207_SEQ1_REC-001.mvnx
 """
@@ -25,7 +12,7 @@ blender --python ~/github-work/dance-mocap/src/render_dots.py -- -S ~/github-wor
 import lxml
 import argparse
 import sys
-from math import radians, degrees
+from math import radians, degrees, cos, sin
 
 from mathutils import Vector, Euler  # mathutils is a blender package
 import bpy
@@ -240,25 +227,28 @@ ALL_KEYPOINTS = {"Pelvis", "L5", "L3", "T12", "T8", "Neck", "Head",
                        "RightToe",
                        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
                        "LeftToe"}
-KEYPOINT_SELECTION = {"Head",
+KEYPOINT_SELECTION = {# "Head",
                       # "Pelvis",
+                      # "L5",
+                      "T12",
                       # "Neck",
                       "RightShoulder",
                       "RightUpperArm",
                       # "RightForeArm",
-                      "RightHand",
+                      # "RightHand",
                       "LeftShoulder",
                       "LeftUpperArm",
                       # "LeftForeArm",
-                      "LeftHand",
+                      # "LeftHand",
                       "RightUpperLeg",
                       # "RightLowerLeg",
-                      #  "RightFoot",
-                      "RightToe",
+                      "RightFoot",
+                      # "RightToe",
                       "LeftUpperLeg",
                       # "LeftLowerLeg",
-                      # "LeftFoot",
-                      "LeftToe"}
+                      # "LeftToe",
+                      "LeftFoot"
+}
 
 USED_BONES = KEYPOINT_SELECTION  # ALL_KEYPOINTS
 
@@ -270,8 +260,8 @@ EEVEE_RENDER_SAMPLES = 32
 EEVEE_VIEWPORT_SAMPLES = 0  # 1
 EEVEE_VIEWPORT_DENOISING = True
 # sequencer
-FRAME_START = 1000 # 2  # 1 is T-pose if imported with MakeWalk
-FRAME_END = 1500  # If not None sequence will be at most this
+FRAME_START = 0  # 1000 # 2  # 1 is T-pose if imported with MakeWalk
+FRAME_END = None  # 1500  # If not None sequence will be at most this
 
 # In Blender, x points away from the cam, y to the left and z up
 # (right-hand rule). Locations are in meters, rotation in degrees.
@@ -284,14 +274,33 @@ FRAME_END = 1500  # If not None sequence will be at most this
 # SUN_ROT = rot_euler_degrees(0, 0, 0)
 # SUN_STRENGTH = 1.0  # in units relative to a reference sun
 
-CAM_NAME = "Cam"
-CAM_LOC = Vector((8.16, 0, 1.6))  # cam is on the front-right
-CAM_ROT = rot_euler_degrees(86.0, 0.0, 90.0)  # human-like view at the origin
+FRONTAL_CAM_NAME = "FrontalCam"
+FRONTAL_CAM_DIST = 8.16
+FRONTAL_CAM_ANGLE = 0
+# cam is on the front-right
+FRONTAL_CAM_LOC = (FRONTAL_CAM_DIST * cos(radians(FRONTAL_CAM_ANGLE)),
+                   FRONTAL_CAM_DIST * sin(radians(FRONTAL_CAM_ANGLE)),
+                   1.6)
+# Vector((8.16, 0, 1.6))
+# human-like view at the origin
+FRONTAL_CAM_ROT = rot_euler_degrees(86.0, 0.0, 90.0)
+FRONTAL_CAM_LIGHT_NAME = "FrontalCamLight"
+FRONTAL_CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
+FRONTAL_CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
+FRONTAL_CAM_LIGHT_SHADOW = False
+#
+SIDE_CAM_NAME = "SideCam"
+SIDE_CAM_DIST = FRONTAL_CAM_DIST
+SIDE_CAM_ANGLE = -60
+SIDE_CAM_LOC = (SIDE_CAM_DIST * cos(radians(SIDE_CAM_ANGLE)),
+                      SIDE_CAM_DIST * sin(radians(SIDE_CAM_ANGLE)),
+                      1.6)
+SIDE_CAM_ROT = rot_euler_degrees(86.0, 0.0, 90  + SIDE_CAM_ANGLE)
+SIDE_CAM_LIGHT_NAME = "SideCamLight"
+SIDE_CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
+SIDE_CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
+SIDE_CAM_LIGHT_SHADOW = False
 
-CAM_LIGHT_NAME = "CamLight"
-CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
-CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
-CAM_LIGHT_SHADOW = False
 
 # ###########################################################################
 # # MAIN ROUTINE
@@ -323,10 +332,16 @@ purge_unused_data()
 # C.object.data.name = SUN_NAME
 # C.object.data.energy = SUN_STRENGTH
 
-# add a cam
-bpy.ops.object.camera_add(location=CAM_LOC, rotation=CAM_ROT)
-C.object.name = CAM_NAME
-C.object.data.name = CAM_NAME
+# add frontal cam
+bpy.ops.object.camera_add(location=FRONTAL_CAM_LOC, rotation=FRONTAL_CAM_ROT)
+C.object.name = FRONTAL_CAM_NAME
+C.object.data.name = FRONTAL_CAM_NAME
+
+# add side cam
+bpy.ops.object.camera_add(location=SIDE_CAM_LOC, rotation=SIDE_CAM_ROT)
+C.object.name = SIDE_CAM_NAME
+C.object.data.name = SIDE_CAM_NAME
+
 
 # # add light as a child of cam
 # bpy.ops.object.light_add(type="POINT", location=CAM_LIGHT_LOC)
@@ -340,10 +355,10 @@ C.object.data.name = CAM_NAME
 
 try:
     armature, mvnx = load_mvnx_into_blender(C, MVNX_PATH, SCHEMA_PATH,
-                                            connectivity="INDIVIDUAL",
+                                            connectivity="CONNECTED", # "INDIVIDUAL",
                                             scale=1.0,
                                             frame_start=FRAME_START,
-                                            inherit_rotations=False,
+                                            inherit_rotations=True,
                                             add_identity_pose=False,
                                             add_t_pose=False,
                                             verbose=True)
@@ -369,7 +384,6 @@ else:
     FRAME_END = FRAME_START + seq_len
 C.scene.frame_end = FRAME_END
 
-print(">>>>>>>>!!!", C.scene.frame_start, C.scene.frame_end)
 # readjust armature position
 armature.location = MVNX_POSITION
 armature.rotation_euler = MVNX_ROTATION
@@ -408,6 +422,11 @@ for b in armature.data.bones:
         sph.parent = armature
         sph.parent_type = "BONE"
         sph.parent_bone = b.name
+        #
+        # if b.name in ["LeftFoot", "RightFoot"]:
+        #     # set heels to the floor if given
+        #     constraint = bone.constraints.new('COPY_ROTATION')
+        #     b.constraints["Child Of"].use_location_z = False
 
 
 # ADD CUSTOM SPHERES:
@@ -422,6 +441,8 @@ sph.parent = armature
 sph.parent_type = "BONE"
 sph.parent_bone = "RightUpperLeg"
 sph.location[1] -= armature.pose.bones["RightUpperLeg"].length
+# widen hips
+sph.location[2] -= armature.pose.bones["RightUpperLeg"].length * 0.15
 
 
 # add left upper leg
@@ -434,6 +455,89 @@ sph.parent = armature
 sph.parent_type = "BONE"
 sph.parent_bone = "LeftUpperLeg"
 sph.location[1] -= armature.pose.bones["LeftUpperLeg"].length
+# widen hips
+sph.location[2] += armature.pose.bones["LeftUpperLeg"].length * 0.15
+
+
+# add right lower leg
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "RightLowerLeg"
+sph.location[1] += armature.pose.bones["RightLowerLeg"].length * 0.15
+
+# add left lower leg
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "LeftLowerLeg"
+sph.location[1] += armature.pose.bones["LeftLowerLeg"].length * 0.15
+
+# add column
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "L5"
+sph.location[1] -= armature.pose.bones["L5"].length
+
+
+# add head
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "Head"
+sph.location[1] -= armature.pose.bones["Head"].length * 0.618
+
+# add right hand
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "RightHand"
+sph.location[1] -= armature.pose.bones["RightHand"].length * 0.618
+
+# add left hand
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "LeftHand"
+sph.location[1] -= armature.pose.bones["LeftHand"].length * 0.618
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # sph.location[1] -= armature.pose.bones['RightHand'].length
