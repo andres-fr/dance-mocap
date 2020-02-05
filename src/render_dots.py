@@ -18,10 +18,11 @@ Nicer way: create dots and grab the sequences from the Mvn object.
   the timing and positions are correct. A good way would be to actually
   copy the sequences
 
-blender --python ~/Desktop/dance_mocap/render_dots.py -- -b 4 -q
+
+blender --python ~/github-work/dance-mocap/src/render_dots.py -- -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/ILF12_20191207_SEQ1_REC-001.mvnx
 """
 
-
+import lxml
 import argparse
 import sys
 from math import radians, degrees
@@ -229,7 +230,7 @@ MVNX_ROTATION = (0, 0, radians(-6.6))  # euler angle
 
 BACKGROUND_COLOR = (0, 0, 0, 0)
 DOT_COLOR = (100, 100, 100, 0)
-DOT_DIAMETER = 0.08
+DOT_DIAMETER = 0.04
 ALL_KEYPOINTS = {"Pelvis", "L5", "L3", "T12", "T8", "Neck", "Head",
                        "RightShoulder", "RightUpperArm", "RightForeArm",
                        "RightHand",
@@ -239,17 +240,27 @@ ALL_KEYPOINTS = {"Pelvis", "L5", "L3", "T12", "T8", "Neck", "Head",
                        "RightToe",
                        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
                        "LeftToe"}
-KEYPOINT_SELECTION = {"Pelvis", "Neck", "Head",
-                      "RightShoulder", "RightUpperArm", "RightForeArm",
+KEYPOINT_SELECTION = {"Head",
+                      # "Pelvis",
+                      # "Neck",
+                      "RightShoulder",
+                      "RightUpperArm",
+                      # "RightForeArm",
                       "RightHand",
-                      "LeftShoulder", "LeftUpperArm", "LeftForeArm",
+                      "LeftShoulder",
+                      "LeftUpperArm",
+                      # "LeftForeArm",
                       "LeftHand",
-                      "RightUpperLeg", "RightLowerLeg", #  "RightFoot",
+                      "RightUpperLeg",
+                      # "RightLowerLeg",
+                      #  "RightFoot",
                       "RightToe",
-                      "LeftUpperLeg", "LeftLowerLeg", # "LeftFoot",
+                      "LeftUpperLeg",
+                      # "LeftLowerLeg",
+                      # "LeftFoot",
                       "LeftToe"}
 
-BONE_TAILS_WITH_DOT = ALL_KEYPOINTS
+USED_BONES = KEYPOINT_SELECTION  # ALL_KEYPOINTS
 
 
 INIT_SHADING_MODE = "RENDERED"
@@ -260,7 +271,7 @@ EEVEE_VIEWPORT_SAMPLES = 0  # 1
 EEVEE_VIEWPORT_DENOISING = True
 # sequencer
 FRAME_START = 1000 # 2  # 1 is T-pose if imported with MakeWalk
-FRAME_END = None  # If not None sequence will be at most this
+FRAME_END = 1500  # If not None sequence will be at most this
 
 # In Blender, x points away from the cam, y to the left and z up
 # (right-hand rule). Locations are in meters, rotation in degrees.
@@ -281,25 +292,6 @@ CAM_LIGHT_NAME = "CamLight"
 CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
 CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
 CAM_LIGHT_SHADOW = False
-
-# FLOOR_NAME = "Floor"
-# FLOOR_SIZE = 10  # in meters
-# FLOOR_METALLIC = 0.0  # metalic aspect, ratio from 0 to 1
-# FLOOR_SPECULAR = 0.0  # specular aspect, ratio from 0 to 1
-# FLOOR_ROUGHNESS = 1.0  # the higher the more light difussion. From 0 to 1
-# FLOOR_SUBSURFACE_RATIO = 0.5
-# FLOOR_SUBSURFACE_COLOR = Vector((1.0, 1.0, 1.0, 1.0))  # RGBA (A=1 for opaque)
-# floor_mat_name = FLOOR_NAME+"Material"
-# FLOOR_IMG_ABSPATH = '/home/a9fb1e/github-work/human-renderer/blender_data/assets/marble_chess.jpg'
-
-# MHX2_ABSPATH = "/home/a9fb1e/github-work/human-renderer/makehuman_data/exported_models/tpose_african.mhx2"
-# MHX2_NAME = "TposeAfrican"
-
-
-# BVH_ABSPATH = "/home/a9fb1e/github-work/human-renderer/makehuman_data/poses/cmu_motion_captures/01/01_06.bvh"
-
-
-
 
 # ###########################################################################
 # # MAIN ROUTINE
@@ -355,6 +347,7 @@ try:
                                             add_identity_pose=False,
                                             add_t_pose=False,
                                             verbose=True)
+    seq_len = len(armature.animation_data.action.fcurves[0].keyframe_points)
 except Exception as e:
     if isinstance(e, lxml.etree.DocumentInvalid):
         print("MNVX didn't pass given validation schema.",
@@ -372,6 +365,9 @@ if FRAME_END is not None:
     new_fe = int(FRAME_END)
     if new_fe < fe:
         fe = new_fe
+else:
+    FRAME_END = FRAME_START + seq_len
+C.scene.frame_end = FRAME_END
 
 print(">>>>>>>>!!!", C.scene.frame_start, C.scene.frame_end)
 # readjust armature position
@@ -401,10 +397,9 @@ bsdf_inputs["Emission"].default_value = DOT_COLOR
 # print(">>>>>>", fcurves, spheres)
 
 
-# TODO: iterate over armature bones. For each bone, create a sphere
-# and assign bone as parent
+# This snippet creates icospheres at the tail of used_bones
 for b in armature.data.bones:
-    if b.name in BONE_TAILS_WITH_DOT:
+    if b.name in USED_BONES:
         bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
                                               radius=DOT_DIAMETER / 2,
                                               location=(0, 0, 0))
@@ -413,6 +408,52 @@ for b in armature.data.bones:
         sph.parent = armature
         sph.parent_type = "BONE"
         sph.parent_bone = b.name
+
+
+# ADD CUSTOM SPHERES:
+
+# add right upper leg
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "RightUpperLeg"
+sph.location[1] -= armature.pose.bones["RightUpperLeg"].length
+
+
+# add left upper leg
+bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,
+                                      radius=DOT_DIAMETER / 2,
+                                      location=(0, 0, 0))
+sph = C.object
+sph.data.materials.append(sphere_material)
+sph.parent = armature
+sph.parent_type = "BONE"
+sph.parent_bone = "LeftUpperLeg"
+sph.location[1] -= armature.pose.bones["LeftUpperLeg"].length
+
+
+# sph.location[1] -= armature.pose.bones['RightHand'].length
+
+# # This snippet extracts the location values for all used bones
+# fcurves = {"pose.bones[\"{}\"].location".format(b): [] for b in USED_BONES}
+# for fc in armature.animation_data.action.fcurves:
+#     try:
+#         coords = [p.co for p in fc.keyframe_points]
+#         fcurves[fc.data_path].append(coords)
+#     except KeyError:
+#         pass
+
+
+
+
+
+# 1. add a single dot
+# 2. For a given bone, find per-frame position of head and tail
+
 
 # # set lengths to zero
 # bpy.ops.object.mode_set(mode="EDIT")
