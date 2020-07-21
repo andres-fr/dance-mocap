@@ -4,14 +4,27 @@
 """
 Scene builder script for Blender. It performs the following tasks:
 
-TODO
+HEADLESS EXAMPLE, RENDER SEQUENCE INTO PNG IMAGES (use -v for noisy mp4):
+blender -b --python ~/github-work/dance-mocap/src/render_dots.py -- -o ~/Desktop/test -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/ILF12_20191207_SEQ1_REC-001.mvnx -p 100 -r
 
-blender --python ~/github-work/dance-mocap/src/render_dots.py -- -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/ILF12_20191207_SEQ1_REC-001.mvnx
+INTERACTIVE EXAMPLE:
+blender --python ~/github-work/dance-mocap/src/render_dots.py -- -o ~/Desktop/test -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/ILF12_20191207_SEQ1_REC-001.mvnx -p 100
+
+
+CONVERT IMAGES TO MP4:
+cat imgs_dir/*.png | ffmpeg -f image2pipe -framerate 60 -i - output.mp4
+
+
+ALL TOGETHER:
+
+mvnx_name=ILF12_20191207_SEQ1_REC-001.mvnx; out_dir=~/Desktop/$mvnx_name; blender -b --python ~/github-work/dance-mocap/src/render_dots.py -- -o $out_dir/png -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/$mvnx_name -p 100 -r && cat $out_dir/png/*.png | ffmpeg -f image2pipe -framerate 60 -i - $out_dir/mvnx_name.mp4
+
 """
 
 import lxml
 import argparse
 import sys
+import os
 from math import radians, degrees, cos, sin
 
 from mathutils import Vector, Euler  # mathutils is a blender package
@@ -23,8 +36,8 @@ C = bpy.context
 D = bpy.data
 
 
-__author__ = "Andres FR"
-__email__ = "aferro@em.uni-frankfurt.de"
+__author__ = "aferro"
+
 
 ###############################################################################
 ### HELPERS
@@ -206,9 +219,26 @@ parser.add_argument("-x", "--mvnx", type=str, required=True,
                     help="MVNX motion capture file to be loaded")
 parser.add_argument("-S", "--mvnx_schema", type=str, default=None,
                     help="XML validation schema for the given MVNX (optional)")
+parser.add_argument("-r", "--render_headless", action="store_true",
+                    help="XML validation schema for the given MVNX (optional)")
+parser.add_argument("-o", "--output_dir", default=os.path.expanduser("~"),
+                    type=str, help="Output dir for the renderings")
+parser.add_argument("-p", "--resolution_percentage", type=int, default=100,
+                    help="Smaller resolution -> faster (but worse) render")
+parser.add_argument("-v", "--as_video", action="store_true",
+                    help="if given, MP4 is exported (noisy background)")
+
 args = parser.parse_args()
 
 
+RENDER_HEADLESS = args.render_headless
+OUT_DIR = os.path.join(args.output_dir, "")  # ensure that it is a dir path
+try:
+    os.makedirs(OUT_DIR)
+except FileExistsError:
+    pass
+RESOLUTION_PERCENTAGE = args.resolution_percentage
+AS_VIDEO = args.as_video
 MVNX_PATH = args.mvnx
 SCHEMA_PATH = args.mvnx_schema
 MVNX_POSITION = (-0.1, -0.07, 0)
@@ -256,9 +286,10 @@ USED_BONES = KEYPOINT_SELECTION  # ALL_KEYPOINTS
 INIT_SHADING_MODE = "RENDERED"
 INIT_3D_MAXIMIZED = False
 # renderer
-EEVEE_RENDER_SAMPLES = 32
+EEVEE_RENDER_SAMPLES = 8
 EEVEE_VIEWPORT_SAMPLES = 0  # 1
 EEVEE_VIEWPORT_DENOISING = True
+RESOLUTION_WH = (1920, 1080)
 # sequencer
 FRAME_START = 0  # 1000 # 2  # 1 is T-pose if imported with MakeWalk
 FRAME_END = None  # 1500  # If not None sequence will be at most this
@@ -278,16 +309,18 @@ FRONTAL_CAM_NAME = "FrontalCam"
 FRONTAL_CAM_DIST = 8.16
 FRONTAL_CAM_ANGLE = 0
 # cam is on the front-right
-FRONTAL_CAM_LOC = (FRONTAL_CAM_DIST * cos(radians(FRONTAL_CAM_ANGLE)),
-                   FRONTAL_CAM_DIST * sin(radians(FRONTAL_CAM_ANGLE)),
-                   1.6)
+# FRONTAL_CAM_LOC = (FRONTAL_CAM_DIST * cos(radians(FRONTAL_CAM_ANGLE)),
+#                    FRONTAL_CAM_DIST * sin(radians(FRONTAL_CAM_ANGLE)),
+#                    1.6)
+FRONTAL_CAM_LOC = (11.96, 0.04, 1)
 # Vector((8.16, 0, 1.6))
 # human-like view at the origin
-FRONTAL_CAM_ROT = rot_euler_degrees(86.0, 0.0, 90.0)
+FRONTAL_CAM_ROT = rot_euler_degrees(90.0, 0.0, 90.0)
 FRONTAL_CAM_LIGHT_NAME = "FrontalCamLight"
 FRONTAL_CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
 FRONTAL_CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
 FRONTAL_CAM_LIGHT_SHADOW = False
+FRONTAL_CAM_FOCAL_LENGTH = 100  # milimeters
 #
 SIDE_CAM_NAME = "SideCam"
 SIDE_CAM_DIST = FRONTAL_CAM_DIST
@@ -300,7 +333,7 @@ SIDE_CAM_LIGHT_NAME = "SideCamLight"
 SIDE_CAM_LIGHT_LOC = Vector((0.0, 1.0, 0.0))
 SIDE_CAM_LIGHT_WATTS = 40.0  # intensity of the bulb in watts
 SIDE_CAM_LIGHT_SHADOW = False
-
+SIDE_CAM_FOCAL_LENGTH = 100  # milimeters
 
 # ###########################################################################
 # # MAIN ROUTINE
@@ -309,10 +342,39 @@ SIDE_CAM_LIGHT_SHADOW = False
 # general settings
 C.scene.world.node_tree.nodes["Background"].inputs['Color'].default_value = BACKGROUND_COLOR
 
-# set denoising feature
+# rendering
+C.scene.render.fps = 60
+# just map_old=400 shows normal speed on viewport but slow on render.
+# just frame_step=4 shows good render speed but slow viewport
+# both on shows normal viewport speed and 4x fast render.
+# So there seems to be no solution for both viewport and render OK...
+C.scene.render.frame_map_old = 100
+C.scene.render.frame_map_new = 100
+C.scene.frame_step = 4
+#
+C.scene.render.resolution_x = RESOLUTION_WH[0]
+C.scene.render.resolution_y = RESOLUTION_WH[1]
+C.scene.render.resolution_percentage = RESOLUTION_PERCENTAGE
+C.scene.render.engine = "BLENDER_EEVEE"
 C.scene.eevee.use_taa_reprojection = EEVEE_VIEWPORT_DENOISING
 C.scene.eevee.taa_render_samples = EEVEE_RENDER_SAMPLES
 C.scene.eevee.taa_samples = EEVEE_VIEWPORT_SAMPLES
+if AS_VIDEO:
+    C.scene.render.image_settings.file_format = "FFMPEG"
+else:
+    C.scene.render.image_settings.file_format = "PNG"
+#
+C.scene.render.ffmpeg.format = "MPEG4"
+C.scene.render.ffmpeg.codec = "H264"
+C.scene.render.ffmpeg.audio_codec = "NONE"
+C.scene.render.ffmpeg.constant_rate_factor = "LOSSLESS"  # also HIGH, MEDIUM...
+C.scene.render.image_settings.color_depth = "16"
+C.scene.render.image_settings.compression = 50
+C.scene.render.image_settings.color_mode = "BW"  # "RGBA"
+C.scene.render.filepath = OUT_DIR
+#
+
+
 # set all 3D screens to RENDERED mode
 set_shading_mode(INIT_SHADING_MODE, D.screens)
 
@@ -334,14 +396,15 @@ purge_unused_data()
 
 # add frontal cam
 bpy.ops.object.camera_add(location=FRONTAL_CAM_LOC, rotation=FRONTAL_CAM_ROT)
+frontal_cam = C.object
 C.object.name = FRONTAL_CAM_NAME
 C.object.data.name = FRONTAL_CAM_NAME
-
+C.object.data.lens = FRONTAL_CAM_FOCAL_LENGTH
 # add side cam
 bpy.ops.object.camera_add(location=SIDE_CAM_LOC, rotation=SIDE_CAM_ROT)
 C.object.name = SIDE_CAM_NAME
 C.object.data.name = SIDE_CAM_NAME
-
+C.object.data.lens = SIDE_CAM_FOCAL_LENGTH
 
 # # add light as a child of cam
 # bpy.ops.object.light_add(type="POINT", location=CAM_LIGHT_LOC)
@@ -370,10 +433,6 @@ except Exception as e:
     else:
         print("Something went wrong:", e)
 
-# readjust fps
-C.scene.render.fps = 60
-C.scene.render.frame_map_old = 400
-C.scene.render.frame_map_new = 100
 if FRAME_END is not None:
     assert FRAME_END > FRAME_START, "Frame end must be bigger than start!"
     fe = C.scene.frame_end
@@ -569,3 +628,7 @@ sph.location[1] -= armature.pose.bones["LeftHand"].length * 0.618
 # >>> for b in D.armatures['ILF12_20191207_SEQ1_REC-001.mvnx'].edit_bones:
 # ...     b.tail = b.head
 # bpy.ops.screen.animation_play()
+
+C.scene.camera = frontal_cam
+if RENDER_HEADLESS:
+    bpy.ops.render.render(animation=True)

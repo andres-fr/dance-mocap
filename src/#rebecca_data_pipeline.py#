@@ -1,0 +1,411 @@
+# -*- coding:utf-8 -*-
+
+
+"""
+TODO:
+
+Z is the vertical
+
+bitter_N->LAJC->frame1625 shows problem with this numeric derivation: position
+   is very smooth but there is a huge acceleration peak
+
+
+TESTABLE HYPOTHESES:
+
+* If norm(velocity)==0, is that perceived as no activity/energy spent?
+  e.g. what happens with complex static poses?
+
+* How to measure sharp angled movements
+
+
+"""
+
+
+import os
+from pathlib import Path
+import time
+#
+import numpy as np
+import pandas as pd
+import matplotlib.animation as pla
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+
+###############################################################################
+### HELPERS
+###############################################################################
+def histogram(series, bin_every=10, ignore_nans=True):
+    """
+    """
+    if ignore_nans:
+        series = series[~np.isnan(series)]
+    minval, maxval = float(min(series)), float(max(series))
+    n_bins = int(np.ceil((maxval-minval) / bin_every))
+    counts, bins = np.histogram(series, bins=n_bins)
+    return counts, bins
+
+
+def hist_entropy(counts, bins, bit_instead_of_nat=False):
+    """
+    """
+    if counts.sum() <= 0  or (counts < 0).any():
+        print(f"WARNING, malformed/empty input {counts}. Returning None")
+        return None
+    log_fn = np.ma.log2 if bit_instead_of_nat else np.ma.log
+    #
+    widths = bins[1:] - bins[:-1]
+    total_area = (counts * widths).sum()
+    pdf = counts / total_area
+    self_information = -log_fn(pdf)
+    entropy = pdf.dot(self_information)
+    return entropy, pdf, self_information
+
+
+###############################################################################
+### DATA PIPELINE
+###############################################################################
+class RebeccaExcel:
+    """
+    """
+    # RGB colors
+    COLOR_MAP = {"LHJC": "#0000ff",  # left hip
+                 "LKJC": "#3333ff",  # left knee
+                 "LAJC": "#6666ff",  # left ankle
+                 #
+                 "LSJC": "#8888ff",  # left shoulder
+                 "LEJC": "#aaaaff",  # left elbow
+                 "LWJC": "#ccccff",  # left wrist
+                 #
+                 "RHJC": "#00ff00",
+                 "RKJC": "#33ff33",
+                 "RAJC": "#66ff66",
+                 #
+                 "RSJC": "#88ff88",
+                 "REJC": "#aaffcc",
+                 "RWJC": "#ccffcc",
+                 #
+                 "AHJC": "#990000",  # belly
+                 "TRX0": "#cc0000",  # between shoulders
+                 "cHead": "#ff0000"}  # head
+
+    def __init__(self, path, timeseries_dtype=np.float64):
+        """
+        Once constructor is done, positions, velocities and acceleration
+        time series can be visited as follows:
+        ``self.velocities["LAJC"]["X"].iloc[2400:2500]``. Note that accel
+        series have 1 element less than velocity, and 2 less than position.
+        Also note that Z is the vertical dimension
+        Empty cells will correspond to ``NaN``s.
+        """
+        self.dtype = timeseries_dtype
+        self.df = pd.read_excel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+        # sanity check
+        keypoints = self.df.iloc[1, 1::3]
+        assert len(keypoints) == 15, "Unexpected number of keypoints!"
+        # load excel contents into our datastructure
+        self.file_id = self.df.columns[1]
+        self.dancer = set()
+        self.positions = {}
+        for i, kp_tag in enumerate(keypoints):
+            dancer, body_part = kp_tag.split(":")
+            self.dancer.add(dancer)
+            d = {}
+            for j in range(3):  # 3 dimensions per joint (x, y, z)
+                ts = self.df.iloc[2:, 1 + 3*i + j]
+                d[ts.iloc[0]] = ts.iloc[2:].to_numpy(dtype=self.dtype)
+            self.positions[body_part] = d
+            assert len(d) == 3, f"Something went wrong with XYZ in {body_part}"
+            assert len(self.dancer) == 1, f"More than 1 dancer? {self.dancer}"
+        # Should never fail, but make sure all time series have same length
+        ts_lengths = {len(arr) for xyz_dict in self.positions.values()
+                      for arr in xyz_dict.values()}
+        assert len(ts_lengths) == 1, "Time series of different length!"
+        self._len = next(iter(ts_lengths))  # just get the length of the ts
+        #
+        self.velocities = {}
+        self.accelerations = {}
+        for kp_tag, series in self.positions.items():
+            self.velocities[kp_tag] = {
+                dim_tag: self.numeric_derivative(
+                    self.positions[kp_tag][dim_tag]) for dim_tag in series}
+            self.accelerations[kp_tag] = {
+                dim_tag: self.numeric_derivative(
+                    self.velocities[kp_tag][dim_tag]) for dim_tag in series}
+
+    def __len__(self):
+        """
+        """
+        return self._len
+
+    def numeric_derivative(self, series_1d):
+        """
+        """
+        return series_1d[1:] - series_1d[:-1]
+
+    def get_frame(self, time_idx):
+        """
+        """
+        pos = {k: (v["X"][time_idx], v["Y"][time_idx], v["Z"][time_idx])
+               for k, v in self.positions.items()}
+        vel = {k: (v["X"][time_idx], v["Y"][time_idx], v["Z"][time_idx])
+               for k, v in self.velocities.items()}
+        acc = {k: (v["X"][time_idx], v["Y"][time_idx], v["Z"][time_idx])
+               for k, v in self.accelerations.items()}
+        return pos, vel, acc
+
+
+###############################################################################
+### PLOTTING
+###############################################################################
+
+def plot_3d_pose(xyz_values, colors=None, diameter=1, title="3D Pose",
+                 x_range_mm=(-2000, 2000), y_range_mm=(-2000, 2000),
+                 z_range_mm=(0, 4000)):
+    """
+    """
+    surface = np.pi * (diameter / 2) ** 2
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    xxx, yyy, zzz = zip(*xyz_values)
+    if colors is not None:
+        assert len(colors) == len(xyz_values), "no. colors must match no. xyz!"
+    ax_scat = ax.scatter(xxx, yyy, zzz, marker="o", depthshade=False,  # no alpha
+                         c=colors, s=surface)
+    #
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax_title = ax.set_title(title)
+    #
+    ax.set_xlim3d(x_range_mm)
+    ax.set_ylim3d(y_range_mm)
+    ax.set_zlim3d(z_range_mm)
+    #
+    return fig, ax, ax_scat, ax_title
+
+
+class PoseAnimation3D:
+    """
+    Usage example::
+
+
+      fname = "bitter_N"  # xslx and mp4
+      re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+      positions, colors = zip(*[(xyz_pos, RebeccaExcel.COLOR_MAP[kp_label])
+                                for kp_label, xyz_pos
+                                in re.get_frame(0)[0].items()])
+      fig, ax, ax_scat, ax_title = plot_3d_pose(positions, colors, diameter=12)
+      ani = pla.FuncAnimation(fig, PoseAnimation3D(re, ax_scat, ax_title),
+                              range(1, len(re), 1),
+                              interval=3, repeat=True, blit=False)
+      plt.show()
+    """
+    def __init__(self, re, scat, title):
+        """
+        """
+        self.re = re
+        self.scat = scat
+        self.title = title
+        self.ori_title = title.get_text()
+
+    def __call__(self, i):
+        """
+        """
+        positions, _ = zip(
+            *[(xyz_pos, RebeccaExcel.COLOR_MAP[kp_label])
+              for kp_label, xyz_pos in self.re.get_frame(i)[0].items()])
+        # https://stackoverflow.com/a/41609238/4511978
+        xxx, yyy, zzz = zip(*positions)
+        self.scat._offsets3d[0][:] = xxx
+        self.scat._offsets3d[1][:] = yyy
+        self.scat._offsets3d[2][:] = zzz
+        #
+        self.title.set_text(self.ori_title + f" frame={i}")
+        #
+        return self.scat, self.title
+
+
+def plot_xyz_histograms(counts_x, bins_x,
+                        counts_y, bins_y,
+                        counts_z, bins_z,
+                        title="XYZ Histogram",
+                        x_range_mm=(-2000, 2000), y_range_mm=(-2000, 2000),
+                        z_range_mm=(0, 4000)):
+    """
+    Given one or more collections of numbers, creates and plots their
+    histograms
+    """
+    fig = plt.figure()
+    fig.suptitle(title, fontsize=16)
+    gs = fig.add_gridspec(2, 3)
+    #
+    ax_x = fig.add_subplot(gs[0, 1:])
+    ax_y = fig.add_subplot(gs[1, 1:])
+    ax_z = fig.add_subplot(gs[:, 0])
+    #
+    ax_x.set_title("X")
+    ax_y.set_title("Y")
+    ax_z.set_title("Z")
+    # set limits
+    ax_x.set_xlim(x_range_mm)
+    ax_y.set_xlim(y_range_mm)
+    ax_z.set_ylim(z_range_mm)
+    hist_peak = max(max(counts_x), max(counts_y), max(counts_z))
+    ax_x.set_ylim(0, hist_peak)
+    ax_y.set_ylim(0, hist_peak)
+    ax_z.set_xlim(0, hist_peak)
+    # populate histograms
+    width_x = 0.7 * (bins_x[1] - bins_x[0])
+    center_x = (bins_x[:-1] + bins_x[1:]) / 2
+    ax_x.bar(center_x, counts_x, align='center', width=width_x)
+    #
+    width_y = 0.7 * (bins_y[1] - bins_y[0])
+    center_y = (bins_y[:-1] + bins_y[1:]) / 2
+    ax_y.bar(center_y, counts_y, align='center', width=width_y)
+    #
+    width_z = 0.7 * (bins_z[1] - bins_z[0])
+    center_z = (bins_z[:-1] + bins_z[1:]) / 2
+    ax_z.barh(center_z, counts_z, align='center', height=width_z)
+    #
+    return fig
+
+
+def plot_time_series(nested_series, title="Time series", colors=None,
+                     subplot_names=None, share_x_view=True):
+    """
+    """
+    if colors is None:
+        colors = [[None for _ in sublist] for sublist in nested_series]
+    if subplot_names is None:
+        subplot_names = ["Subplot {}".format(i+1)
+                         for i in range(len(nested_series))]
+    fig, axes = plt.subplots(len(nested_series), sharex=share_x_view)
+    fig.suptitle(title)
+    for ns, a, cols, sn in zip(nested_series, axes, colors, subplot_names):
+        plot_args = [[range(len(s)), s, c]  for (s, c) in zip(ns, cols)]
+        # sum is to flatten
+        a.plot(*sum(plot_args, []))
+        a.set_title(sn)
+    return fig
+
+###############################################################################
+### EXAMPLES
+###############################################################################
+def animation_3d(re, frame_range=None, repeat=True):
+    """
+    fname = "bitter_N"  # xslx and mp4
+    re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+    animation_3d(re)  # , range(1, len(re), 3))
+    """
+    positions, colors = zip(*[(xyz_pos, RebeccaExcel.COLOR_MAP[kp_label])
+                              for kp_label, xyz_pos
+                              in re.get_frame(0)[0].items()])
+    fig, ax, ax_scat, ax_title = plot_3d_pose(positions, colors, diameter=12,
+                                              z_range_mm=(0, 2500))
+    ani = pla.FuncAnimation(fig, PoseAnimation3D(re, ax_scat, ax_title),
+                            frame_range,
+                            interval=1, repeat=repeat, blit=False)
+    plt.show()
+
+
+def plot_xyz_position_hist(re, kp_tag="cHead", mm_per_bin=20):
+    """
+    fname = "bitter_N"  # xslx and mp4
+    re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+    plot_xyz_position_hist(re, "AHJC")
+    """
+    counts_x, bins_x = histogram(re.positions[kp_tag]["X"],
+                                 bin_every=mm_per_bin)
+    counts_y, bins_y = histogram(re.positions[kp_tag]["Y"],
+                                 bin_every=mm_per_bin)
+    counts_z, bins_z = histogram(re.positions[kp_tag]["Z"],
+                                 bin_every=mm_per_bin)
+    fig = plot_xyz_histograms(counts_x, bins_x, counts_y, bins_y, counts_z,
+                              bins_z, title=f"XYZ {kp_tag} Positions")
+    plt.show()
+
+
+def xyz_entropies(re, kp_tag):
+    """
+    fname = "bitter_N"  # xslx and mp4
+    re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+    kp_tag = "LWJC"
+    xyz_entropies(re, kp_tag)
+    plot_xyz_position_hist(re, kp_tag)
+    """
+    counts, bins = histogram(re.positions[kp_tag]["X"], bin_every=20)
+    x_entropy, x_pdf, x_self_information = hist_entropy(counts, bins)
+    print("X entropy:", x_entropy)
+    #
+    counts, bins = histogram(re.positions[kp_tag]["Y"], bin_every=20)
+    y_entropy, y_pdf, y_self_information = hist_entropy(counts, bins)
+    print("Y entropy:", y_entropy)
+    #
+    counts, bins = histogram(re.positions[kp_tag]["Z"], bin_every=20)
+    z_entropy, z_pdf, z_self_information = hist_entropy(counts, bins)
+    print("Z entropy:", z_entropy)
+    #
+    return x_entropy, y_entropy, z_entropy
+
+
+def plot_ts(re, kp_tag):
+    """
+    fname = "bitter_N"  # xslx and mp4
+    re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+    plot_ts(re, "LAJC")
+    """
+    # how much is the kp accelerating, in any direction
+    vels = [re.velocities[kp_tag]["X"], re.velocities[kp_tag]["Y"],
+            re.velocities[kp_tag]["Z"]]
+    accels = [re.accelerations[kp_tag]["X"], re.accelerations[kp_tag]["Y"],
+              re.accelerations[kp_tag]["Z"]]
+    #
+    vel_norm = np.linalg.norm(vels, axis=0)
+    acc_norm = np.linalg.norm(accels, axis=0)
+    # Cosine correlation between velocity and +Z (up) direction
+    vel_cosine_up = np.array(vels)[-1] / vel_norm
+    #
+    ns = [[re.positions[kp_tag]["X"], re.positions[kp_tag]["Y"],
+           re.positions[kp_tag]["Z"]],
+          vels,
+          accels,
+          [vel_norm, acc_norm],
+          [vel_cosine_up]]
+    colors = [["r", "g", "b"], ["r", "g", "b"], ["r", "g", "b"],
+              ["aquamarine", "orange"],
+              ["b"]]
+    subplot_names = ["XYZ Positions (RGB)",
+                     "XYZ velocities (RGB)",
+                     "XYZ accelerations (RGB)",
+                     "Velocity (b) and accel (o) norm",
+                     "Velocity correlation with +Z (up)"]
+    fig = plot_time_series(ns, title="Time series", colors=colors,
+                           subplot_names=subplot_names)
+    plt.show()
+    return fig
+
+
+###############################################################################
+### MAIN ROUTINE
+###############################################################################
+HOME = str(Path.home())
+SPREADSHEETS = os.path.join(HOME, "datasets", "rebecca", "coordinate_data")
+VIDEOS = os.path.join(HOME, "datasets", "rebecca", "full_video_set")
+
+
+# fname = "bitter_N"  # xslx and mp4
+# re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+# animation_3d(re)  # , range(1, len(re), 3))
+
+
+fname = "bitter_N"  # xslx and mp4
+re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+plot_ts(re, "LAJC")
+
+
+# fname = "bitter_N"  # xslx and mp4
+# re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+# kp_tag = "LWJC"
+# xyz_entropies(re, kp_tag)
+# plot_xyz_position_hist(re, kp_tag)

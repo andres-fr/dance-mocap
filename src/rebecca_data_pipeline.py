@@ -4,10 +4,17 @@
 """
 TODO:
 
-Y is the vertical, not z? Ask Rebecca and adapt xyz_hist accordingly
+Z is the vertical
 
 bitter_N->LAJC->frame1625 shows problem with this numeric derivation: position
    is very smooth but there is a huge acceleration peak
+
+
+TESTABLE HYPOTHESES:
+
+* If norm(velocity)==0, is that perceived as no activity/energy spent?
+  e.g. what happens with complex static poses
+
 
 """
 
@@ -84,8 +91,9 @@ class RebeccaExcel:
         """
         Once constructor is done, positions, velocities and acceleration
         time series can be visited as follows:
-        ``self.velocities["LAJC"].iloc[2400:2500]``. Note that acceleration
+        ``self.velocities["LAJC"]["X"].iloc[2400:2500]``. Note that accel
         series have 1 element less than velocity, and 2 less than position.
+        Also note that Z is the vertical dimension
         Empty cells will correspond to ``NaN``s.
         """
         self.dtype = timeseries_dtype
@@ -273,7 +281,7 @@ def plot_time_series(nested_series, title="Time series", colors=None,
     fig, axes = plt.subplots(len(nested_series), sharex=share_x_view)
     fig.suptitle(title)
     for ns, a, cols, sn in zip(nested_series, axes, colors, subplot_names):
-        plot_args = [[range(len(s)), s]  for (s, c) in zip(ns, cols)]
+        plot_args = [[range(len(s)), s, c]  for (s, c) in zip(ns, cols)]
         # sum is to flatten
         a.plot(*sum(plot_args, []))
         a.set_title(sn)
@@ -339,21 +347,37 @@ def xyz_entropies(re, kp_tag):
     return x_entropy, y_entropy, z_entropy
 
 
-def plot_pos_vel_acc(re, kp_tag):
+def plot_ts(re, kp_tag):
     """
     fname = "bitter_N"  # xslx and mp4
     re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
-    plot_pos_vel_acc(re, "LAJC")
+    plot_ts(re, "LAJC")
     """
+    # how much is the kp accelerating, in any direction
+    vels = [re.velocities[kp_tag]["X"], re.velocities[kp_tag]["Y"],
+            re.velocities[kp_tag]["Z"]]
+    accels = [re.accelerations[kp_tag]["X"], re.accelerations[kp_tag]["Y"],
+              re.accelerations[kp_tag]["Z"]]
+    #
+    vel_norm = np.linalg.norm(vels, axis=0)
+    acc_norm = np.linalg.norm(accels, axis=0)
+    # Cosine correlation between velocity and +Z (up) direction
+    vel_cosine_up = np.array(vels)[-1] / vel_norm
+    #
     ns = [[re.positions[kp_tag]["X"], re.positions[kp_tag]["Y"],
            re.positions[kp_tag]["Z"]],
-          [re.velocities[kp_tag]["X"], re.velocities[kp_tag]["Y"],
-           re.velocities[kp_tag]["Z"]],
-          [re.accelerations[kp_tag]["X"], re.accelerations[kp_tag]["Y"],
-           re.accelerations[kp_tag]["Z"]]]
-    colors = [["r", "g", "b"], ["r", "g", "b"], ["r", "g", "b"]]
-    subplot_names = ["XYZ Positions (RGB)", "XYZ velocities (RGB)",
-                     "XYZ accelerations (RGB)"]
+          vels,
+          accels,
+          [vel_norm, acc_norm],
+          [vel_cosine_up]]
+    colors = [["r", "g", "b"], ["r", "g", "b"], ["r", "g", "b"],
+              ["aquamarine", "orange"],
+              ["b"]]
+    subplot_names = ["XYZ Positions (RGB)",
+                     "XYZ velocities (RGB)",
+                     "XYZ accelerations (RGB)",
+                     "Velocity (b) and accel (o) norm",
+                     "Velocity correlation with +Z (up)"]
     fig = plot_time_series(ns, title="Time series", colors=colors,
                            subplot_names=subplot_names)
     plt.show()
@@ -373,9 +397,9 @@ VIDEOS = os.path.join(HOME, "datasets", "rebecca", "full_video_set")
 # animation_3d(re)  # , range(1, len(re), 3))
 
 
-# fname = "bitter_N"  # xslx and mp4
-# re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
-# plot_pos_vel_acc(re, "LAJC")
+fname = "bitter_N"  # xslx and mp4
+re = RebeccaExcel(os.path.join(SPREADSHEETS, fname + ".xlsx"))
+plot_ts(re, "LAJC")
 
 
 # fname = "bitter_N"  # xslx and mp4
