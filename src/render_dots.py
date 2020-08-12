@@ -15,9 +15,20 @@ CONVERT IMAGES TO MP4:
 cat imgs_dir/*.png | ffmpeg -f image2pipe -framerate 60 -i - output.mp4
 
 
-ALL TOGETHER:
+PIPELINE FOR SINGLE FILE:
 
-mvnx_name=ILF12_20191207_SEQ1_REC-001.mvnx; out_dir=~/Desktop/$mvnx_name; blender -b --python ~/github-work/dance-mocap/src/render_dots.py -- -o $out_dir/png -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/$mvnx_name -p 100 -r && cat $out_dir/png/*.png | ffmpeg -f image2pipe -framerate 60 -i - $out_dir/mvnx_name.mp4
+mvnx_name=ILF12_20191207_SEQ1_REC-001.mvnx; out_dir=~/Desktop/$mvnx_name; blender -b --python ~/github-work/dance-mocap/src/render_dots.py -- -o $out_dir/png -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x ~/github-work/dance-mocap/mvnx_files/$mvnx_name -p 100 -r && cat $out_dir/png/*.png | ffmpeg -f image2pipe -framerate 60 -i - $out_dir/$mvnx_name.mp4
+
+
+PIPELINE FOR ALL FILES:
+for i in ~/datasets/mocap_library/MVNX/*
+do
+  mvnx_name=`basename $i`
+  out_dir=~/Desktop/$mvnx_name
+  blender -b --python ~/github-work/dance-mocap/src/render_dots.py -- -o $out_dir/png -S ~/github-work/blender-mvnx-io/io_anim_mvnx/data/mvnx_schema_dance_dec19.xsd -x $i -p 100 -r
+  cat $out_dir/png/*.png | ffmpeg -f image2pipe -framerate 60 -i - $out_dir/$mvnx_name.mp4
+done
+
 
 """
 
