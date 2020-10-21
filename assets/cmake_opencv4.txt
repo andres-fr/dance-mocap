@@ -1,0 +1,99 @@
+OPENCV INSTALL
+
+https://qengineering.eu/install-caffe-on-ubuntu-20.04-with-opencv-4.4.html
+
+
+cmake -D CMAKE_BUILD_TYPE=RELEASE \
+             -D CMAKE_INSTALL_PREFIX=/usr/local \
+             -D INSTALL_C_EXAMPLES=OFF \
+             -D OPENCV_EXTRA_MODULES_PATH=~/Downloads/opencv_contrib/modules \
+             -D BUILD_EXAMPLES=OFF \
+             -D WITH_FFMPEG=1 \
+             -D WITH_TIFF=ON \
+             -D WITH_CUDA=ON \
+             -D CUDA_GENERATION=Turing \
+             -D ENABLE_FAST_MATH=1 \
+             -D CUDA_FAST_MATH=1 \
+             -D WITH_CUBLAS=1 \
+             -D WITH_LAPACK=1 \
+             -D PYTHON_DEFAULT_EXECUTABLE=~/miniconda3/bin/python \
+             -D BUILD_opencv_python3=ON \
+             -D HAVE_opencv_python3=ON \
+             -D PYTHON3_EXECUTABLE=~/miniconda3/bin/python \
+             -D PYTHON3_INCLUDE_PATH=~/miniconda3/include/python3.8 \
+             -D PYTHON3_LIBRARIES=~/miniconda3/python3.8/site-packages \
+             -D PYTHON3_NUMPY_INCLUDE_DIRS=~/miniconda3/lib/python3.8/site-packages/numpy/core/include \
+             -D BUILD_TIFF=ON \
+             -D WITH_EIGEN=ON \
+             -D WITH_V4L=ON \
+             -D WITH_LIBV4L=ON \
+             -D WITH_OPENGL=ON \
+             -D BUILD_NEW_PYTHON_SUPPORT=ON \
+             -D OPENCV_GENERATE_PKGCONFIG=ON \
+             -D BUILD_TESTS=OFF \
+             -D INSTALL_PYTHON_EXAMPLES=ON ..
+
+
+
+ -D PYTHON3_EXECUTABLE= ~/miniconda3/bin/python \
+ -D PYTHON3_INCLUDE_PATH= ~/miniconda3/include/python3.7m \
+ -D PYTHON3_LIBRARIES= ~/miniconda3/lib/python3.7/site-packages \
+
+
+# This one doesnt seem to run on py3
+cmake -D CMAKE_BUILD_TYPE=RELEASE \
+             -D CMAKE_INSTALL_PREFIX=/usr/local \
+             -D INSTALL_C_EXAMPLES=ON \
+             -D OPENCV_EXTRA_MODULES_PATH=~/Downloads/opencv_contrib/modules \
+             -D BUILD_EXAMPLES=ON \
+             -D BUILD_opencv_python2=ON \
+             -D WITH_FFMPEG=1 \
+             -D WITH_TIFF=ON \
+             -D WITH_CUDA=ON \
+             -D CUDA_GENERATION=Turing \
+             -D ENABLE_FAST_MATH=1 \
+             -D CUDA_FAST_MATH=1 \
+             -D WITH_CUBLAS=1 \
+             -D WITH_LAPACK=OFF \
+             -D PYTHON2_EXECUTABLE=/usr/bin/python \
+             -D PYTHON2_INCLUDE_DIR=/usr/include/python2.7 \
+             -D PYTHON2_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython2.7.so \
+             -D PYTHON2_NUMPY_INCLUDE_DIRS=/usr/lib/python2.7/dist-packages/numpy/core/include \
+             -D PYTHON3_EXECUTABLE=~/miniconda3/bin/python \
+             -D PYTHON_DEFAULT_EXECUTABLE=~/miniconda3/bin/python \
+             -D BUILD_opencv_python3=ON \
+             -D HAVE_opencv_python3=ON \
+             -D PYTHON3_INCLUDE_DIR=/usr/include/python3.8 \
+             -D PYTHON3_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.8.so \
+             -D PYTHON3_NUMPY_INCLUDE_DIRS=~/miniconda3/lib/python3.8/site-packages/numpy/core/include \
+             -D BUILD_TIFF=ON \
+             -D WITH_EIGEN=ON \
+             -D WITH_V4L=ON \
+             -D WITH_LIBV4L=ON \
+             -D WITH_OPENGL=ON \
+             -D BUILD_NEW_PYTHON_SUPPORT=ON \
+             -D OPENCV_GENERATE_PKGCONFIG=ON \
+             -D BUILD_TESTS=OFF \
+             -D INSTALL_PYTHON_EXAMPLES=ON ..
+
+
+
+
+####
+
+
+sudo apt install cmake git unzip
+sudo apt install libprotobuf-dev libleveldb-dev liblmdb-dev
+sudo apt install libsnappy-dev libhdf5-serial-dev protobuf-compiler
+sudo apt install --no-install-recommends libboost-all-dev
+sudo apt install libatlas-base-dev libopenblas-dev
+sudo apt install the python3-dev python3-skimage
+sudo pip3 install pydot
+sudo apt install graphviz
+
+
+
+cd /home/mvn1e/git_work/face_segmentation/build/face_seg && /usr/bin/c++   -I/home/mvn1e/git_work/face_segmentation/face_seg -I/home/mvn1e/Downloads/caffe-ssd/distribute/include -isystem /usr/local/include/opencv4  -std=c++14 -fPIC   -o CMakeFiles/face_seg.dir/face_seg.cpp.o -c /home/mvn1e/git_work/face_segmentation/face_seg/face_seg.cpp -I/usr/local/cuda/targets/x86_64-linux/include -L/usr/local/cuda/targets/x86_64-linux/lib && cd -
+
+
+cd /home/mvn1e/git_work/face_segmentation/build/face_seg_image && /usr/bin/c++  -DBOOST_ALL_NO_LIB -I/home/mvn1e/git_work/face_segmentation/face_seg -I/home/mvn1e/Downloads/caffe-ssd/distribute/include -isystem /usr/local/include/opencv4  -std=c++14 -fPIC   -o CMakeFiles/face_seg_image.dir/face_seg_image.cpp.o -c /home/mvn1e/git_work/face_segmentation/face_seg_image/face_seg_image.cpp -I/usr/local/cuda/targets/x86_64-linux/include -L/usr/local/cuda/targets/x86_64-linux/lib && cd -
