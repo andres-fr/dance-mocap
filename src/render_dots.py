@@ -40,6 +40,7 @@ from math import radians, degrees, cos, sin
 
 from mathutils import Vector, Euler  # mathutils is a blender package
 import bpy
+from bpy_extras.object_utils import world_to_camera_view
 
 from io_anim_mvnx.mvnx_import import load_mvnx_into_blender
 
@@ -231,7 +232,7 @@ parser.add_argument("-x", "--mvnx", type=str, required=True,
 parser.add_argument("-S", "--mvnx_schema", type=str, default=None,
                     help="XML validation schema for the given MVNX (optional)")
 parser.add_argument("-r", "--render_headless", action="store_true",
-                    help="XML validation schema for the given MVNX (optional)")
+                    help="If given, this script will actually render out")
 parser.add_argument("-o", "--output_dir", default=os.path.expanduser("~"),
                     type=str, help="Output dir for the renderings")
 parser.add_argument("-p", "--resolution_percentage", type=int, default=100,
@@ -451,7 +452,9 @@ if FRAME_END is not None:
     if new_fe < fe:
         fe = new_fe
 else:
-    FRAME_END = FRAME_START + seq_len
+    # subtract 1 because [start, end] instead of [start, end) and Blender
+    # would render a frame at the end with no animation
+    FRAME_END = FRAME_START + seq_len - 1
 C.scene.frame_end = FRAME_END
 
 # readjust armature position
@@ -608,36 +611,41 @@ sph.location[1] -= armature.pose.bones["LeftHand"].length * 0.618
 
 
 
+CAM_COORD_POSITIONS = []
+icospheres = [(v.parent_bone, v) for k, v in D.objects.items() if "Icosphere" in k]
+pose_bones = {pb.name: pb for pb in D.objects[armature.name].pose.bones}
+for frame_i in range(C.scene.frame_start, C.scene.frame_end + 1):
+    print("Collecting positions for frame >>>", frame_i)
+    C.scene.frame_current = frame_i
+    data = {"frame": frame_i}
+    for ico_bone, ico in icospheres:
+        # get PoseBone global position
+        pb_tail = pose_bones[ico_bone].tail
+        pb_head = pose_bones[ico_bone].head
+        # get PoseBone cam-relative position (x, y) where x goes from left (0)
+        # to right(1), and y from bottom (0) to top(1)
+        pb_tail_cam_xyz = world_to_camera_view(C.scene, frontal_cam, pb_tail)
+        pb_head_cam_xyz = world_to_camera_view(C.scene, frontal_cam, pb_head)
+        # get Icosphere global pos: contained in the last col of "matrix_world"
+        ico_loc_xyz = Vector(ico.matrix_world.transposed()[3][0:3])
+        ico_cam_xyz = world_to_camera_view(C.scene, frontal_cam, ico_loc_xyz)
+        data[(ico_bone, ico.name)] = {"bone_tail": pb_tail_cam_xyz,
+                                      "bone_head": pb_head_cam_xyz,
+                                      "ico_pos": ico_cam_xyz}
+    CAM_COORD_POSITIONS.append(data)
+
+# CAM_COORD_POSITIONS[2163][("LeftHand", "Icosphere.016")]
+# CAM_COORD_POSITIONS[2163][("RightHand", "Icosphere.015")]
+# CAM_COORD_POSITIONS[2163]
 
 
-# sph.location[1] -= armature.pose.bones['RightHand'].length
-
-# # This snippet extracts the location values for all used bones
-# fcurves = {"pose.bones[\"{}\"].location".format(b): [] for b in USED_BONES}
-# for fc in armature.animation_data.action.fcurves:
-#     try:
-#         coords = [p.co for p in fc.keyframe_points]
-#         fcurves[fc.data_path].append(coords)
-#     except KeyError:
-#         pass
+# pb = pose_bones["RightHand"]
+# lico = icospheres[-1][1]
+breakpoint()
 
 
 
 
-
-# 1. add a single dot
-# 2. For a given bone, find per-frame position of head and tail
-
-
-# # set lengths to zero
-# bpy.ops.object.mode_set(mode="EDIT")
-# for b in D.armatures[armature.name].edit_bones:
-#     print(">>>>>>>>>>>", b.name)
-#     b.head = b.tail
-
-
-# >>> for b in D.armatures['ILF12_20191207_SEQ1_REC-001.mvnx'].edit_bones:
-# ...     b.tail = b.head
 # bpy.ops.screen.animation_play()
 
 C.scene.camera = frontal_cam
