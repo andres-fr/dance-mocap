@@ -614,9 +614,12 @@ sph.location[1] -= armature.pose.bones["LeftHand"].length * 0.618
 CAM_COORD_POSITIONS = []
 icospheres = [(v.parent_bone, v) for k, v in D.objects.items() if "Icosphere" in k]
 pose_bones = {pb.name: pb for pb in D.objects[armature.name].pose.bones}
-for frame_i in range(C.scene.frame_start, C.scene.frame_end + 1):
+for frame_i in range(C.scene.frame_start, C.scene.frame_end + 1,
+                     C.scene.frame_step):
     print("Collecting positions for frame >>>", frame_i)
-    C.scene.frame_current = frame_i
+    C.scene.frame_set(frame_i)
+    # C.scene.frame_current = frame_i
+    # bpy.context.view_layer.update()  # does nothing?
     data = {"frame": frame_i}
     for ico_bone, ico in icospheres:
         # get PoseBone global position
@@ -638,10 +641,43 @@ for frame_i in range(C.scene.frame_start, C.scene.frame_end + 1):
 # CAM_COORD_POSITIONS[2163][("RightHand", "Icosphere.015")]
 # CAM_COORD_POSITIONS[2163]
 
+asdf = [(x["frame"],
+         x[("RightHand", "Icosphere.015")]["bone_head"][:2],
+         x[("RightHand", "Icosphere.015")]["ico_pos"][:2])
+        for x in CAM_COORD_POSITIONS]
+print("\n".join(str(x) for x in asdf))
 
 # pb = pose_bones["RightHand"]
 # lico = icospheres[-1][1]
-breakpoint()
+# breakpoint()
+
+
+# C.scene.frame_current = 2150
+# pose_bones["RightHand"].head
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
